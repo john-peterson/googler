@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/bin/env python3
 #
 # Copyright © 2008 Henri Hakkinen
 # Copyright © 2015-2021 Arun Prakash Jana <engineerarun@gmail.com>
@@ -105,7 +105,8 @@ COLORMAP = {k: '\x1b[%sm' % v for k, v in {
     'x': '0', 'X': '1', 'y': '7', 'Y': '7;1',
 }.items()}
 
-USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36'
+# USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36'
+USER_AGENT = 'Lynx'
 
 text_browsers = ['elinks', 'links', 'lynx', 'w3m', 'www-browser']
 
@@ -741,6 +742,9 @@ class DOMBuilder(HTMLParser):
             self.handle_starttag(tag, attrs)
 
     def handle_data(self, text: str) -> None:
+        parent = self._stack[-1]
+        if parent.tag == "script" or parent.tag == "img" or parent.tag == "style":
+            return
         if not self._stack:
             # Ignore text nodes before the first tag.
             return
@@ -2372,7 +2376,75 @@ class GoogleParser(object):
         cw = lambda s: re.sub(r'[ \t\n\r]+', ' ', s) if s is not None else s
 
         index = 0
-        for div_g in tree.select_all(div_selector):
+        # for div_g in tree.select_all(div_selector):
+
+        # from pprint import pprint
+        # from bs4 import BeautifulSoup
+
+        '''
+        # Gecko
+        items = tree.select("div[id=main]").descendants()
+        for i in items:
+                # for node in a.descendants():
+            # print("i:")
+            # pprint(i)
+            abstract = i.select('div[class=v9i61e]')
+            if not abstract:
+                continue
+            # print(abstract.text)
+            # abstract = abstract.text[0:75]
+            title = i.select('div[class=j039Wc]')
+            if not title:
+                continue
+            # soup = BeautifulSoup(title.text, "html.parser")
+            title = title.text
+            soup = BeautifulSoup(str(i), "html.parser")
+            # url = soup.find('a', attrs={'data-ved'})
+            url = soup.find(lambda tag: tag.name=='a' and tag.has_attr('data-ved'))
+            url = self.unwrap_link(url.get("href"))
+            metadata=""
+            # exit()
+            '''
+
+# Lynx
+        items = tree.select("body").children[2]
+        # print(items)
+        # if items.empty():
+            # print("empty")
+        for i in items.children:
+            r = i.select('div[class=ezO2md]')
+            if not r:
+                print("found no results")
+                continue
+            if "Including results for" in r.text or "Did you mean:" in r.text or "Showing results for" in r.text or "See results about" in r.text or "site:" in r.text or "View all" in r.text:
+                print(r.text.strip()[:20])
+                continue
+            url = r.select('a')
+            if not url:
+                print("found no a tag")
+                continue
+            try:
+                # print(url)
+                url = self.unwrap_link(url.attr('href'))
+            except ValueError:
+                print(r.text)
+                break
+            title = r.select('span[class^=CVA68e]')
+            # title = r.select('span[contains(@class,CVA68e)]')
+            if not title:
+                continue
+            title = title.text
+            abstract = r.select('div[class=Dks9wf]')
+            if not abstract:
+                continue
+            # abstract = abstract.text[0:75]
+            abstract = abstract.text
+            metadata=""
+            index += 1
+            self.results.append(Result(index, cw(title), url, cw(abstract), metadata=cw(metadata)))
+            continue
+
+
             if div_g.select('.hp-xpdbox'):
                 # Skip smart cards.
                 continue
@@ -2883,9 +2955,26 @@ class GooglerCmd(object):
         """
         # This method also sets self._results_filtered and
         # self._urltable.
+        # print(self._google_url)
         if self._preload_from_file:
             with open(self._preload_from_file, encoding='utf-8') as fp:
                 page = fp.read()
+        elif self._opts.curl:
+            import pycurl
+            import io
+            # response = io.StringIO()
+            response = io.BytesIO()
+            c = pycurl.Curl()
+            c.setopt(c.URL, str(self._google_url))
+            c.setopt(c.WRITEFUNCTION, response.write)
+            c.setopt(c.USERAGENT, USER_AGENT)
+            # c.setopt(c.HTTPHEADER, ['Content-T
+            c.setopt(c.FOLLOWLOCATION, 1)
+            c.perform()
+            c.close()
+            # page=response.getvalue()
+            page = response.getvalue().decode('UTF-8')
+            response.close()
         else:
             page = self._conn.fetch_page(self._google_url.relative())
             if logger.isEnabledFor(logging.DEBUG):
@@ -3185,7 +3274,7 @@ class GooglerCmd(object):
                 copier_params = ['clip']
 
             if copier_params:
-                Popen(copier_params, stdin=PIPE, stdout=DEVNULL, stderr=DEVNULL).communicate(content)
+                Popen(copier_params, stdin=PIPE, stdout=sys.stdout, stderr=DEVNULL).communicate(content)
                 return
 
             # If native clipboard utilities are absent, try to use terminal multiplexers
@@ -3763,6 +3852,7 @@ def parse_args(args=None, namespace=None):
     # Hidden option for parsing dumped HTML
     addarg('--parse', dest='html_file', help=argparse.SUPPRESS)
     addarg('--complete', help=argparse.SUPPRESS)
+    addarg('--curl', action='store_true', help=argparse.SUPPRESS)
 
     parsed = argparser.parse_args(args, namespace)
     if parsed.nocolor:
