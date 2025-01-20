@@ -106,6 +106,7 @@ COLORMAP = {k: '\x1b[%sm' % v for k, v in {
 }.items()}
 
 USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36'
+# USER_AGENT = 'Lynx'
 
 text_browsers = ['elinks', 'links', 'lynx', 'w3m', 'www-browser']
 
@@ -741,6 +742,9 @@ class DOMBuilder(HTMLParser):
             self.handle_starttag(tag, attrs)
 
     def handle_data(self, text: str) -> None:
+        parent = self._stack[-1]
+        if parent.tag == "script" or parent.tag == "img" or parent.tag == "style":
+            return
         if not self._stack:
             # Ignore text nodes before the first tag.
             return
@@ -2372,7 +2376,33 @@ class GoogleParser(object):
         cw = lambda s: re.sub(r'[ \t\n\r]+', ' ', s) if s is not None else s
 
         index = 0
-        for div_g in tree.select_all(div_selector):
+        items = tree.select("div[id=main]").descendants()
+        for i in items:
+                # for node in a.descendants():
+            # print("i:")
+            from pprint import pprint
+            # pprint(i)
+            abstract = i.select('div[class=v9i61e]')
+            if not abstract:
+                continue
+            # print(abstract.text)
+            abstract = abstract.text[0:75]
+            title = i.select('div[class=j039Wc]')
+            if not title:
+                continue
+            # soup = BeautifulSoup(title.text, "html.parser")
+            title = title.text
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(str(i), "html.parser")
+            # url = soup.find('a', attrs={'data-ved'})
+            url = soup.find(lambda tag: tag.name=='a' and tag.has_attr('data-ved'))
+            url = url.get("href")[7:]
+            # print(url[7:])
+            metadata=""
+            # exit()
+            index += 1
+            self.results.append(Result(index, cw(title), url, cw(abstract), metadata=cw(metadata)))
+            continue
             if div_g.select('.hp-xpdbox'):
                 # Skip smart cards.
                 continue
@@ -2887,6 +2917,24 @@ class GooglerCmd(object):
             with open(self._preload_from_file, encoding='utf-8') as fp:
                 page = fp.read()
         else:
+            url = "google.com"+self._google_url.relative()
+            import pycurl
+            import io
+            # from io import StringIO
+            # response = io.StringIO()
+            response = io.BytesIO()
+            c = pycurl.Curl()
+            c.setopt(c.URL, url)
+            c.setopt(c.WRITEFUNCTION, response.write)
+            c.setopt(c.USERAGENT, USER_AGENT)
+            # c.setopt(c.HTTPHEADER, ['Content-T
+            c.setopt(c.FOLLOWLOCATION, 1)
+            c.perform()
+            c.close()
+            # page=response.getvalue()
+            # page = response.getvalue().decode('UTF-8')
+            response.close()
+
             page = self._conn.fetch_page(self._google_url.relative())
             if logger.isEnabledFor(logging.DEBUG):
                 import tempfile
