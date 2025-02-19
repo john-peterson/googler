@@ -1,0 +1,152 @@
+#!/bin/env bash
+
+# TERMINAL BROWSER FOR VIM CODERS 
+
+isday() {
+read -t1 -rs -d \\ -p $'\e]11;?\e\\' bg
+bg=$(echo $bg | xxd -c 25 | cut -d/ -f2)
+if test "$(pastel format name $bg)" = white; then
+	echo true
+else
+	echo false
+fi
+}
+
+# if $(isday); then
+	# export NO_COLOR=true
+	# export GLAMOUR_STYLE=light
+# fi
+
+test $TERM = screen-256color && export TERM=xterm-256color
+
+function ghraw() {
+	local u n p
+# g|$vim -
+u=$(echo $@ | sed s,blob,raw,)
+n=$(basename $u)
+p=~/tmp
+test -f $p/$n || wget $u -P $p
+vim $p/$n
+}
+
+# while getopts "qr" a; do
+chromium=false
+curl=false
+html=false
+js=false
+raw=false
+x=false
+for a in $@; do
+	case $a in
+			-x) set -x
+				x=true
+# shift
+# shift $(($OPTIND-1))
+;;
+		-a) agent="${@: -1}"; break ;;
+		-c) curl=true ;;
+	-h) html=true;;
+	-j) js=true;;
+	-m) chromium=true;;
+		-r) raw=true ;;
+			# eval "$links $u | $less"
+		# exit;;
+	*) u+=$a 
+		# ((OPTIND++))
+			;;
+esac
+done
+
+# parse broken pasted links
+# u="$u"|tr -d " \n|"
+u=$(echo $u|sed "s,[\ |\n],,g"|grep -Eo 'https?://[^ ]+'|sed 's/\.$//')
+host=$(echo $u | awk -F'[/:]' '{print $4}')
+path=$(echo $u | gawk -F'(https?://[^/]+|?)' '$0=$2')
+file=$(basename $u)
+
+if $x; then
+echo u=$u
+echo host=$host
+echo path=$path
+echo file=$file
+echo agent=$agent
+# exit
+read -p "open page?"
+fi
+ 
+# conf
+less="less -+F"
+links="links -dump"
+# test -n "$PAGER" && less=$PAGER
+browser="$links \"$u\" | $less"
+
+test -n "$agent" && curl -sLA "$agent" $u | lynx -stdin -dump | $less && exit
+$chromium && chromium-browser --enable-logging --headless --disable-gpu --dump-dom $u|lynx -stdin -dump| $less && exit
+$curl && eval "curl -sLA Gecko $u | lynx -stdin -dump | eval $less" && exit
+$js && elinks $u -dump | eval $less;
+$html && eval "links $u" && exit
+$raw && eval "$links $u | $less" && exit
+
+case $host in
+# header killer
+developer.android.com) 
+	case $u in
+		*reference*) links -dump $u | sed -n '/Artifact:/,$p' 2>/dev/null | sed '/easyToUnderstand/q' | $less ;;
+		*) eval $browser ;;
+	esac ;;
+source.android.com) links -dump $u | sed -n '/Core Topics/,$p' 2>/dev/null | sed '/easyToUnderstand/q' | $less ;;
+*cloud.google.com) links -dump $u | sed -n '/Send feedback/,$p' 2>/dev/null | sed '/easyToUnderstand/q' | $less ;;
+askubuntu.com|*serverfault.com|*superuser.com|*stack*.com) links -dump $u | sed -n '/Learn more about [Labs|Teams]/,$p' | sed '/Browse other questions tagged/q' | eval $less ;; 
+*wikipedia.org) links -dump $u | sed -n '/From Wikipedia/,$p' | eval $less ;; 
+
+	# custom programs 
+gist.github*.com)	gh gist view $u;;
+*github.com)
+	case $path in
+	*discussions*|*wiki*) links -dump $u | sed -nr '/Jump to bottom|Additional navigation options/,$p' | eval $less	;; 
+		# eval $browser 
+	*issues*)	gh issue view --comments $u;;
+	*pull*)	gh pr view --comments $u;;
+	# file
+	*.*)
+	# curl -L $(echo $u | sed s,blob,raw,) | $less;;
+	ghraw $u;;
+	*/*) gh repo view $u;;
+	# commit links etc should fall here
+	community*) links -dump $u | sed -n '/GitHub Community/,$p' 2>/dev/null | $less ;;
+	*) eval $browser ;;
+	# GitHub Community
+	# *) ;;&
+	esac;;
+
+*gitlab.com)
+	case $u in
+	*issues*) glab issue view --comments $u;;
+	*) glab repo view $u;;
+	esac;;
+*gitlab*)
+	case $u in
+	*issues*) glab issue view $u;;
+	*) glab repo view $u;;
+	# *) eval $browser ;;
+	esac;;
+
+*reddit.com) rtv $u ;;
+
+*stackoverflow.com) socli -o $u ;;
+
+	# nasty pre processing 
+*ibm.com|*linux.org|linuxize.com|linux.die.net|*linuxquestions.org|*linuxmint.com)	curl -sLA Gecko $u | lynx -stdin -dump | eval $less;;
+
+#  JavaScript never works 
+*cyberciti.biz) elinks $u -dump | eval $less;;
+
+# last resort  ... 
+answers.microsoft.com|developer.arm.com|quora.com)
+chromium-browser --enable-logging --headless --disable-gpu --dump-dom $u|lynx -stdin -dump| $less
+# read -p "open in Firefox?" y
+# test "$y" = y && browsh $u
+;;
+
+*) eval $browser ;;
+esac
