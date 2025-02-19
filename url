@@ -1,0 +1,52 @@
+#!/bin/env bash
+
+# TERMINAL BROWSER FOR VIM CODERS 
+
+# conf 
+less=less
+links="links -dump"
+test -n "$PAGER" && less=$PAGER
+
+# parse mangled and broken pasted links
+# u="$u"|tr -d " \n|"
+u=$(echo $@|grep -Eo 'https?://[^ ]+')
+
+domain=$(echo $u | awk -F[/:] '{print $4}')
+
+case "$domain" in
+
+# header killer
+*android.com) links -dump $u | sed -n '/java.lang.Object/,$p' 2>/dev/null | sed '/easyToUnderstand/q' | $less ;;
+askubuntu.com|*serverfault.com|*superuser.com|*stackexchange.com) links -dump $u | sed -n '/Learn more about Teams/,$p' | sed '/Browse other questions tagged/q' | $less ;; 
+
+	# custom programs 
+*github.com)
+	case $u in
+	*gist*)	gh gist view $u;;
+	*issues*)	gh issue view --comments $u;;
+	*pull*)	gh pr view --comments $u;;
+	*) gh repo view $u;;
+	# commit links etc should fall here
+	# *) links.sh $u ;;
+	esac;;
+
+*gitlab.com)
+	case $u in
+	*) glab repo view $u;;
+	esac;;
+
+*reddit.com) rtv $u ;;
+
+*stackoverflow.com) socli -o $u ;;
+
+	# nasty pre processing 
+*ibm.com|linuxize.com|linux.die.net|*linuxquestions.org|*linuxmint.com|*unix.com)	curl -sA Gecko $u | lynx -stdin -dump | $less;;
+
+#  JavaScript never works 
+*cyberciti.biz) elinks $u -dump | $less;;
+
+# last resort  ... 
+quora.com) browsh $u ;;
+
+*) $links $u | $less ;;
+esac
