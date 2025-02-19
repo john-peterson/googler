@@ -1,0 +1,82 @@
+#!/bin/env bash
+
+# TERMINAL BROWSER FOR VIM CODERS 
+
+# parse mangled and broken pasted links
+# u="$u"|tr -d " \n|"
+u=$(echo $@|grep -Eo 'https?://[^ ]+')
+host=$(echo $u | awk -F[/:] '{print $4}')
+path=$(echo $u | awk -F'(http[s]://[^/]+|?)' '$0=$2')
+file=$(basename $u)
+
+# conf
+less="less -+F"
+links="links -dump"
+# test -n "$PAGER" && less=$PAGER
+browser="$links \"$u\" | $less"
+
+for a in $@; do
+	case $a in
+			-q) set -x;;
+		-raw) eval "$links $u | $less"
+		exit;;
+esac
+done
+
+case $host in
+
+# header killer
+developer.android.com) 
+	case $u in
+		*reference*) links -dump $u | sed -n '/Artifact:/,$p' 2>/dev/null | sed '/easyToUnderstand/q' | $less ;;
+		*) eval $browser ;;
+	esac ;;
+source.android.com) links -dump $u | sed -n '/Core Topics/,$p' 2>/dev/null | sed '/easyToUnderstand/q' | $less ;;
+*cloud.google.com) links -dump $u | sed -n '/Send feedback/,$p' 2>/dev/null | sed '/easyToUnderstand/q' | $less ;;
+askubuntu.com|*serverfault.com|*superuser.com|*stack*.com) links -dump $u | sed -n '/Learn more about [Labs|Teams]/,$p' | sed '/Browse other questions tagged/q' | eval $less ;; 
+*wikipedia.org) links -dump $u | sed -n '/From Wikipedia/,$p' | eval $less ;; 
+
+	# custom programs 
+gist.github*.com)	gh gist view $u;;
+*github.com)
+	case $path in
+	*issues*)	gh issue view --comments $u;;
+	*pull*)	gh pr view --comments $u;;
+	# file
+	*.*)
+	curl -L $(echo $u | sed s,blob,raw,) | $less;;
+	*^\.*) gh repo view $u;;
+	# commit links etc should fall here
+	community*) links -dump $u | sed -n '/GitHub Community/,$p' 2>/dev/null | $less ;;
+	*) eval $browser ;;
+	# GitHub Community
+	# *) ;;&
+	esac;;
+
+*gitlab.com)
+	case $u in
+	*issues*) glab issue view --comments $u;;
+	*) glab repo view $u;;
+	esac;;
+*gitlab*)
+	case $u in
+	*issues*) glab issue view $u;;
+	*) glab repo view $u;;
+	# *) eval $browser ;;
+	esac;;
+
+*reddit.com) rtv $u ;;
+
+*stackoverflow.com) socli -o $u ;;
+
+	# nasty pre processing 
+*ibm.com|linuxize.com|linux.die.net|*linuxquestions.org|*linuxmint.com)	curl -sA Gecko $u | lynx -stdin -dump | eval $less;;
+
+#  JavaScript never works 
+*cyberciti.biz) elinks $u -dump | eval $less;;
+
+# last resort  ... 
+developer.arm.com|quora.com) browsh $u ;;
+
+*) eval $browser ;;
+esac
